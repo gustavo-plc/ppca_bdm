@@ -84,4 +84,5 @@ ano,estado,media_precipitacao_mm
 2020,MT,N/A
 2020,MS,N/A
 
-vencedor_geral,MT,1.3212
+estado_vencedor_geral,MT
+media_vencedor_geral_mm,1.3212
