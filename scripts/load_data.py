@@ -3,10 +3,16 @@ import math
 import pandas as pd
 from cassandra.cluster import Cluster
 
-CSV_PATH = "data/processed/dados_inmet_clean.csv"
+
 KEYSPACE = "inmet"
 SAMPLE_ROWS = 1000
-ONE_HOUR_ESTIMATED_ROWS = 230000
+ONE_HOUR_ESTIMATED_ROWS = 500000
+
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+CSV_PATH = BASE_DIR / "data" / "processed" / "dados_inmet_clean.csv"
 
 
 def null_if_nan(value):

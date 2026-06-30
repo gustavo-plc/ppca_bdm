@@ -19,14 +19,14 @@ ano,estado,media_precipitacao_mm
 2004,DF,0.3384
 2004,MT,1.2749
 2004,MS,0.1773
-2005,GO,N/A
-2005,DF,N/A
-2005,MT,N/A
-2005,MS,N/A
-2006,GO,N/A
-2006,DF,N/A
+2005,GO,0.2754
+2005,DF,0.2756
+2005,MT,0.4853
+2005,MS,0.1925
+2006,GO,0.2949
+2006,DF,0.2095
 2006,MT,N/A
-2006,MS,N/A
+2006,MS,0.2664
 2007,GO,N/A
 2007,DF,N/A
 2007,MT,N/A
@@ -85,4 +85,4 @@ ano,estado,media_precipitacao_mm
 2020,MS,N/A
 
 estado_vencedor_geral,MT
-media_vencedor_geral_mm,1.3212
+media_vencedor_geral_mm,1.0425
