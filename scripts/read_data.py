@@ -1,317 +1,194 @@
 import time
-import csv
-import os
+from statistics import mean
+
 from cassandra.cluster import Cluster
+from cassandra.query import SimpleStatement
 
 KEYSPACE = "inmet"
-ESTADOS = ["GO", "DF", "MT", "MS"]
-ANOS = list(range(2000, 2021))
-N_RUNS = 5
+TABELA_A = "clima_modelo_a"
+TABELA_B = "clima_modelo_b"
 
-BENCHMARK_CSV = "results/read_benchmark_results.csv"
-ANALYTIC_CSV = "results/read_resultado_analitico.csv"
+NUM_RUNS = 5  # descartar a primeira
+ESTADOS = [
+    "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS",
+    "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC",
+    "SE", "SP", "TO"
+]
+
+ANOS_MESES = [
+    "2000-05", "2000-06", "2000-07", "2000-08", "2000-09", "2000-10", "2000-11", "2000-12",
+    "2001-01", "2001-02", "2001-03", "2001-04", "2001-05", "2001-06", "2001-07", "2001-08",
+    "2001-09", "2001-10", "2001-11", "2001-12", "2002-01", "2002-02", "2002-03", "2002-04",
+    "2002-05", "2002-06", "2002-07", "2002-08", "2002-09", "2002-10", "2002-11", "2002-12",
+    "2003-01", "2003-02", "2003-03", "2003-04", "2003-05", "2003-06", "2003-07", "2003-08",
+    "2003-09", "2003-10", "2003-11", "2003-12", "2004-01", "2004-02", "2004-03", "2004-04",
+    "2004-05", "2004-06", "2004-07", "2004-08", "2004-09", "2004-10", "2004-11", "2004-12",
+    "2005-01", "2005-02", "2005-03", "2005-04", "2005-05", "2005-06", "2005-07", "2005-08",
+    "2005-09", "2005-10", "2005-11", "2005-12", "2006-01", "2006-02", "2006-03", "2006-04",
+    "2006-05", "2006-06", "2006-07", "2006-08", "2006-09", "2006-10", "2006-11", "2006-12",
+    "2007-01", "2007-02", "2007-03", "2007-04", "2007-05", "2007-06", "2007-07", "2007-08",
+    "2007-09", "2007-10", "2007-11", "2007-12", "2008-01", "2008-02", "2008-03", "2008-04",
+    "2008-05", "2008-06", "2008-07", "2008-08", "2008-09", "2008-10", "2008-11", "2008-12",
+    "2009-01", "2009-02", "2009-03", "2009-04", "2009-05", "2009-06", "2009-07", "2009-08",
+    "2009-09", "2009-10", "2009-11", "2009-12", "2010-01", "2010-02", "2010-03", "2010-04",
+    "2010-05", "2010-06", "2010-07", "2010-08", "2010-09", "2010-10", "2010-11", "2010-12",
+    "2011-01", "2011-02", "2011-03", "2011-04", "2011-05", "2011-06", "2011-07", "2011-08",
+    "2011-09", "2011-10", "2011-11", "2011-12", "2012-01", "2012-02", "2012-03", "2012-04",
+    "2012-05", "2012-06", "2012-07", "2012-08", "2012-09", "2012-10", "2012-11", "2012-12",
+    "2013-01", "2013-02", "2013-03", "2013-04", "2013-05", "2013-06", "2013-07", "2013-08",
+    "2013-09", "2013-10", "2013-11", "2013-12", "2014-01", "2014-02", "2014-03", "2014-04",
+    "2014-05", "2014-06", "2014-07", "2014-08", "2014-09", "2014-10", "2014-11", "2014-12",
+    "2015-01", "2015-02", "2015-03", "2015-04", "2015-05", "2015-06", "2015-07", "2015-08",
+    "2015-09", "2015-10", "2015-11", "2015-12", "2016-01", "2016-02", "2016-03", "2016-04",
+    "2016-05", "2016-06", "2016-07", "2016-08", "2016-09", "2016-10", "2016-11", "2016-12",
+    "2017-01", "2017-02", "2017-03", "2017-04", "2017-05", "2017-06", "2017-07", "2017-08",
+    "2017-09", "2017-10", "2017-11", "2017-12", "2018-01", "2018-02", "2018-03", "2018-04",
+    "2018-05", "2018-06", "2018-07", "2018-08", "2018-09", "2018-10", "2018-11", "2018-12",
+    "2019-01", "2019-02", "2019-03", "2019-04", "2019-05", "2019-06", "2019-07", "2019-08",
+    "2019-09", "2019-10", "2019-11", "2019-12", "2020-01", "2020-02", "2020-03", "2020-04",
+    "2020-05", "2020-06", "2020-07", "2020-08", "2020-09", "2020-10", "2020-11", "2020-12"
+]
 
 
-def buscar_dados_mesma_query(session, stmt, tabela_nome):
+def conectar_cassandra():
+    cluster = Cluster(["127.0.0.1"])
+    session = cluster.connect(KEYSPACE)
+    return cluster, session
+
+
+def consulta_modelo_a(session):
+    query = f"""
+        SELECT estado, temperatura_bulbo_seco
+        FROM {TABELA_A}
+        WHERE estado = %s
+        ALLOW FILTERING
     """
-    Executa a MESMA estrutura de query nos dois modelos:
-    SELECT estado, ano, precipitacao
-    FROM <tabela>
-    WHERE estado = ? AND ano = ? ALLOW FILTERING
+    statement = SimpleStatement(query)
 
-    No Modelo A, essa query é compatível com a modelagem.
-    No Modelo B, ela é inadequada e depende de ALLOW FILTERING.
-    """
-    rows_total = []
+    soma_por_estado = {estado: 0.0 for estado in ESTADOS}
+    contagem_por_estado = {estado: 0 for estado in ESTADOS}
+    total_linhas = 0
 
     for estado in ESTADOS:
-        for ano in ANOS:
-            result = list(session.execute(stmt, (estado, ano)))
-            rows_total.extend(result)
-
-    return rows_total
-
-
-def processar_resultado(rows):
-    """
-    Calcula:
-    - média anual de precipitação por estado
-    - vencedor por ano
-    - vencedor geral
-    """
-    acumulado = {
-        (estado, ano): {"soma": 0.0, "count": 0}
-        for estado in ESTADOS
-        for ano in ANOS
-    }
-
-    for row in rows:
-        try:
-            estado = row.estado
-            ano = int(row.ano)
-            precipitacao = row.precipitacao
-        except Exception:
-            continue
-
-        if estado in ESTADOS and ano in ANOS and precipitacao is not None:
-            acumulado[(estado, ano)]["soma"] += precipitacao
-            acumulado[(estado, ano)]["count"] += 1
+        rows = session.execute(statement, (estado,))
+        for row in rows:
+            if row.temperatura_bulbo_seco is not None:
+                soma_por_estado[estado] += row.temperatura_bulbo_seco
+                contagem_por_estado[estado] += 1
+            total_linhas += 1
 
     medias = {}
-    for (estado, ano), valores in acumulado.items():
-        if valores["count"] > 0:
-            medias[(estado, ano)] = valores["soma"] / valores["count"]
-        else:
-            medias[(estado, ano)] = None
-
-    vencedores_por_ano = {}
-    for ano in ANOS:
-        melhor_estado = None
-        melhor_media = -1
-
-        for estado in ESTADOS:
-            media = medias[(estado, ano)]
-            if media is not None and media > melhor_media:
-                melhor_estado = estado
-                melhor_media = media
-
-        vencedores_por_ano[ano] = (melhor_estado, melhor_media if melhor_estado else None)
-
-    medias_gerais = {}
     for estado in ESTADOS:
-        valores = [
-            medias[(estado, ano)]
-            for ano in ANOS
-            if medias[(estado, ano)] is not None
-        ]
-        medias_gerais[estado] = sum(valores) / len(valores) if valores else None
+        qtd = contagem_por_estado[estado]
+        medias[estado] = (soma_por_estado[estado] / qtd) if qtd > 0 else None
 
-    vencedor_geral = None
-    melhor_media_geral = -1
-    for estado, media in medias_gerais.items():
-        if media is not None and media > melhor_media_geral:
-            vencedor_geral = estado
-            melhor_media_geral = media
-
-    return medias, vencedores_por_ano, medias_gerais, vencedor_geral, melhor_media_geral
+    return total_linhas, medias
 
 
-def executar_benchmark(session, modelo_nome, stmt):
-    tempos_leitura = []
-    tempos_processamento = []
-    tempos_totais = []
-    linhas_lidas = []
+def consulta_modelo_b(session):
+    query = f"""
+        SELECT estado, temperatura_bulbo_seco
+        FROM {TABELA_B}
+        WHERE estado = %s
+          AND ano_mes = %s
+    """
+    statement = SimpleStatement(query)
 
-    ultimo_resultado = None
+    soma_por_estado = {estado: 0.0 for estado in ESTADOS}
+    contagem_por_estado = {estado: 0 for estado in ESTADOS}
+    total_linhas = 0
 
-    print(f"\n{'=' * 55}")
-    print(f"  BENCHMARK DE LEITURA — {modelo_nome}")
-    print(f"{'=' * 55}")
-
-    for i in range(1, N_RUNS + 1):
-        descartada = " [DESCARTADA]" if i == 1 else ""
-        print(f"  Execução {i}/{N_RUNS}{descartada}")
-
-        t0 = time.time()
-        rows = buscar_dados_mesma_query(session, stmt, modelo_nome)
-        t1 = time.time()
-
-        resultado = processar_resultado(rows)
-        t2 = time.time()
-
-        tempo_leitura = t1 - t0
-        tempo_processamento = t2 - t1
-        tempo_total = t2 - t0
-        n_rows = len(rows)
-
-        print(f"    Linhas lidas     : {n_rows}")
-        print(f"    Tempo leitura    : {tempo_leitura:.4f} s")
-        print(f"    Tempo processam. : {tempo_processamento:.4f} s")
-        print(f"    Tempo total      : {tempo_total:.4f} s")
-
-        ultimo_resultado = resultado
-
-        if i == 1:
-            continue
-
-        tempos_leitura.append(tempo_leitura)
-        tempos_processamento.append(tempo_processamento)
-        tempos_totais.append(tempo_total)
-        linhas_lidas.append(n_rows)
-
-    media_leitura = sum(tempos_leitura) / len(tempos_leitura)
-    media_processamento = sum(tempos_processamento) / len(tempos_processamento)
-    media_total = sum(tempos_totais) / len(tempos_totais)
-    media_linhas = sum(linhas_lidas) / len(linhas_lidas)
-
-    print(f"\n  --- Médias das execuções 2 a 5 ---")
-    print(f"  Linhas lidas     : {media_linhas:.1f}")
-    print(f"  Tempo leitura    : {media_leitura:.4f} s")
-    print(f"  Tempo processam. : {media_processamento:.4f} s")
-    print(f"  Tempo total      : {media_total:.4f} s")
-
-    return {
-        "modelo": modelo_nome,
-        "media_linhas": media_linhas,
-        "media_t_leitura": media_leitura,
-        "media_t_processamento": media_processamento,
-        "media_t_total": media_total,
-        "resultado_analitico": ultimo_resultado
-    }
-
-
-def imprimir_resultado_analitico(modelo_nome, resultado):
-    medias, vencedores_por_ano, medias_gerais, vencedor_geral, melhor_media_geral = resultado
-
-    print(f"\n{'=' * 55}")
-    print(f"  RESULTADO ANALÍTICO — {modelo_nome}")
-    print(f"{'=' * 55}")
-
-    print(f"\n  {'Ano':<10}" + "".join(f"{estado:>10}" for estado in ESTADOS))
-    print("  " + "-" * (10 + 10 * len(ESTADOS)))
-
-    for ano in ANOS:
-        linha = f"  {ano:<10}"
-        for estado in ESTADOS:
-            media = medias[(estado, ano)]
-            linha += f"{media:>10.4f}" if media is not None else f"{'N/A':>10}"
-        print(linha)
-
-    print("\n  Vencedor por ano:")
-    for ano in ANOS:
-        estado, media = vencedores_por_ano[ano]
-        if estado is not None:
-            print(f"    {ano}: {estado} ({media:.4f} mm)")
-        else:
-            print(f"    {ano}: sem dados")
-
-    print("\n  Médias gerais (2000–2020):")
     for estado in ESTADOS:
-        media = medias_gerais[estado]
-        if media is not None:
-            print(f"    {estado}: {media:.4f} mm")
+        for ano_mes in ANOS_MESES:
+            rows = session.execute(statement, (estado, ano_mes))
+            for row in rows:
+                if row.temperatura_bulbo_seco is not None:
+                    soma_por_estado[estado] += row.temperatura_bulbo_seco
+                    contagem_por_estado[estado] += 1
+                total_linhas += 1
+
+    medias = {}
+    for estado in ESTADOS:
+        qtd = contagem_por_estado[estado]
+        medias[estado] = (soma_por_estado[estado] / qtd) if qtd > 0 else None
+
+    return total_linhas, medias
+
+
+def benchmark_modelo(nome_modelo, func_consulta, session):
+    tempos = []
+    resultados = []
+
+    print(f"\n=== BENCHMARK {nome_modelo} ===")
+
+    for i in range(NUM_RUNS):
+        inicio = time.perf_counter()
+        linhas, medias = func_consulta(session)
+        fim = time.perf_counter()
+
+        duracao = fim - inicio
+        tempos.append(duracao)
+        resultados.append((linhas, medias))
+
+        exemplos = {k: v for k, v in medias.items() if v is not None}
+        exemplos_items = list(exemplos.items())[:5]
+        exemplos_str = ", ".join([f"{uf}={temp:.3f}" for uf, temp in exemplos_items])
+
+        print(
+            f"Execução {i + 1}: tempo = {duracao:.3f} s, "
+            f"linhas = {linhas}, "
+            f"exemplos de médias = {exemplos_str}"
+        )
+
+    tempos_validos = tempos[1:]
+    linhas_validas = [r[0] for r in resultados[1:]]
+    medias_finais = resultados[-1][1]
+
+    tempo_medio = mean(tempos_validos) if tempos_validos else None
+    linhas_medias = mean(linhas_validas) if linhas_validas else None
+
+    print(f"\n=== RESUMO {nome_modelo} (descartando a primeira execução) ===")
+    print(f"Tempo médio (s)          : {tempo_medio:.3f}" if tempo_medio is not None else "Tempo médio (s): None")
+    print(f"Linhas médias retornadas : {linhas_medias:.1f}" if linhas_medias is not None else "Linhas médias: None")
+
+    return tempo_medio, linhas_medias, medias_finais
+
+
+def imprimir_medias(medias, titulo):
+    print(f"\n=== {titulo} ===")
+    for estado in sorted(medias.keys()):
+        valor = medias[estado]
+        if valor is None:
+            print(f"{estado}: sem dados")
         else:
-            print(f"    {estado}: N/A")
-
-    if vencedor_geral is not None:
-        print(f"\n  *** Estado vencedor geral: {vencedor_geral} com média de {melhor_media_geral:.4f} mm ***")
-    else:
-        print("\n  *** Sem vencedor geral (sem dados) ***")
+            print(f"{estado}: {valor:.3f} °C")
 
 
-def salvar_resultados_csv(benchmark_a, benchmark_b):
-    os.makedirs("results", exist_ok=True)
+def main():
+    print("=== READ DATA — LEITURA DE DADOS ===")
+    print("Pergunta analítica:")
+    print("Qual é a temperatura média horária por estado, ao longo de todo o período disponível na base?")
 
-    with open(BENCHMARK_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            "modelo",
-            "media_linhas_lidas",
-            "media_tempo_leitura_s",
-            "media_tempo_processamento_s",
-            "media_tempo_total_s"
-        ])
-        for bench in [benchmark_a, benchmark_b]:
-            writer.writerow([
-                bench["modelo"],
-                f"{bench['media_linhas']:.1f}",
-                f"{bench['media_t_leitura']:.4f}",
-                f"{bench['media_t_processamento']:.4f}",
-                f"{bench['media_t_total']:.4f}"
-            ])
+    cluster, session = conectar_cassandra()
 
-    resultado_a = benchmark_a["resultado_analitico"]
-    medias_a, vencedores_por_ano_a, medias_gerais_a, vencedor_geral_a, melhor_media_geral_a = resultado_a
+    try:
+        tempo_a, linhas_a, medias_a = benchmark_modelo("MODELO A", consulta_modelo_a, session)
+        tempo_b, linhas_b, medias_b = benchmark_modelo("MODELO B", consulta_modelo_b, session)
 
-    with open(ANALYTIC_CSV, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["ano", "estado", "media_precipitacao_mm"])
-        for ano in ANOS:
-            for estado in ESTADOS:
-                media = medias_a[(estado, ano)]
-                writer.writerow([
-                    ano,
-                    estado,
-                    f"{media:.4f}" if media is not None else "N/A"
-                ])
+        print("\n=== COMPARAÇÃO FINAL ===")
+        print(f"Tempo médio MODELO A (s): {tempo_a:.3f}" if tempo_a is not None else "Tempo médio MODELO A: None")
+        print(f"Tempo médio MODELO B (s): {tempo_b:.3f}" if tempo_b is not None else "Tempo médio MODELO B: None")
+        print(f"Linhas médias A: {linhas_a:.1f}" if linhas_a is not None else "Linhas médias A: None")
+        print(f"Linhas médias B: {linhas_b:.1f}" if linhas_b is not None else "Linhas médias B: None")
 
-        writer.writerow([])
-        writer.writerow(["estado_vencedor_geral", vencedor_geral_a])
-        writer.writerow(["media_vencedor_geral_mm", f"{melhor_media_geral_a:.4f}" if melhor_media_geral_a is not None else "N/A"])
+        imprimir_medias(medias_a, "MÉDIAS POR ESTADO — MODELO A")
+        imprimir_medias(medias_b, "MÉDIAS POR ESTADO — MODELO B")
 
-    print(f"\n  Benchmark salvo em: {BENCHMARK_CSV}")
-    print(f"  Resultado analítico salvo em: {ANALYTIC_CSV}")
+    finally:
+        print("\nEncerrando conexão com Cassandra...")
+        cluster.shutdown()
+        print("Conexão encerrada.")
 
 
-print("=== READ DATA — BENCHMARK DE LEITURA (MESMA QUERY) ===\n")
-print("Pergunta analítica:")
-print("  Qual estado do Centro-Oeste teve maior precipitação média anual")
-print("  ao longo de 2000–2020?\n")
-
-print("Estratégia experimental:")
-print("  A MESMA estrutura de query será aplicada aos dois modelos:")
-print("  SELECT estado, ano, precipitacao")
-print("  FROM <tabela>")
-print("  WHERE estado = ? AND ano = ? ALLOW FILTERING\n")
-
-print("Objetivo:")
-print("  Comparar o efeito de aplicar a mesma consulta lógica")
-print("  sobre duas modelagens com chaves de partição diferentes.\n")
-
-print("Conectando ao Cassandra...")
-cluster = Cluster(["127.0.0.1"])
-session = cluster.connect(KEYSPACE)
-
-stmt_a = session.prepare("""
-    SELECT estado, ano, precipitacao
-    FROM clima_modelo_a
-    WHERE estado = ? AND ano = ? ALLOW FILTERING
-""")
-
-stmt_b = session.prepare("""
-    SELECT estado, ano, precipitacao
-    FROM clima_modelo_b
-    WHERE estado = ? AND ano = ? ALLOW FILTERING
-""")
-
-benchmark_a = executar_benchmark(session, "Modelo A", stmt_a)
-imprimir_resultado_analitico("Modelo A", benchmark_a["resultado_analitico"])
-
-benchmark_b = executar_benchmark(session, "Modelo B", stmt_b)
-imprimir_resultado_analitico("Modelo B", benchmark_b["resultado_analitico"])
-
-print("\n" + "=" * 55)
-print("  COMPARATIVO FINAL")
-print("=" * 55)
-
-print(f"\n  {'Métrica':<38} {'Modelo A':>10} {'Modelo B':>10}")
-print("  " + "-" * 60)
-print(f"  {'Linhas lidas (média)':<38} {benchmark_a['media_linhas']:>10.1f} {benchmark_b['media_linhas']:>10.1f}")
-print(f"  {'Tempo leitura Cassandra (s)':<38} {benchmark_a['media_t_leitura']:>10.4f} {benchmark_b['media_t_leitura']:>10.4f}")
-print(f"  {'Tempo processamento Python (s)':<38} {benchmark_a['media_t_processamento']:>10.4f} {benchmark_b['media_t_processamento']:>10.4f}")
-print(f"  {'Tempo total (s)':<38} {benchmark_a['media_t_total']:>10.4f} {benchmark_b['media_t_total']:>10.4f}")
-
-if benchmark_a["media_t_leitura"] > 0:
-    fator = benchmark_b["media_t_leitura"] / benchmark_a["media_t_leitura"]
-    print(f"\n  Fator B/A: {fator:.2f}x  (>1 = Modelo B mais lento; <1 = Modelo B mais rápido)")
-
-resultado_a = benchmark_a["resultado_analitico"]
-resultado_b = benchmark_b["resultado_analitico"]
-
-_, _, medias_gerais_a, vencedor_geral_a, melhor_media_geral_a = resultado_a
-_, _, medias_gerais_b, vencedor_geral_b, melhor_media_geral_b = resultado_b
-
-if vencedor_geral_a is not None:
-    print(f"\n  Vencedor geral Modelo A: {vencedor_geral_a} ({melhor_media_geral_a:.4f} mm)")
-else:
-    print("\n  Modelo A: sem vencedor geral")
-
-if vencedor_geral_b is not None:
-    print(f"  Vencedor geral Modelo B: {vencedor_geral_b} ({melhor_media_geral_b:.4f} mm)")
-else:
-    print("  Modelo B: sem vencedor geral")
-
-salvar_resultados_csv(benchmark_a, benchmark_b)
-
-cluster.shutdown()
-print("\nConexão encerrada.")
+if __name__ == "__main__":
+    main()
