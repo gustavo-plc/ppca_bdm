@@ -1,4 +1,13 @@
-Aqui está o quadro consolidado dos três experimentos, focado apenas no que importa para o trabalho.
+| Item                  | Conteúdo                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Título                | Modelagem de Dados e Desempenho de Leitura no Apache Cassandra: Um Estudo Experimental com Dados Climáticos        |
+| Hipótese de pesquisa  | A modelagem do banco de dados influencia o desempenho de leitura a depender do tipo de query a ser executada       |
+| Objeto de estudo      | Apache Cassandra — dois modelos de dados com diferentes estratégias de particionamento                             |
+| Dados utilizados      | Dataset climático INMET, recorte temporal 2000–2020, cobertura nacional (27 UFs)                                   |
+| Método                | Experimental — benchmark controlado com 3 cenários de consulta e 5 execuções por modelo (com descarte da primeira) |
+| Variável independente | Estratégia de modelagem (partition key por estado vs. partition key por (estado, ano_mes))                         |
+| Variável dependente   | Tempo médio de leitura (segundos)                                                                                  |
+| Variável de controle  | Mesma pergunta analítica, mesmo volume de dados retornado, mesmo ambiente de execução                              |
 
 ***
 
