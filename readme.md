@@ -92,3 +92,98 @@ Os três scripts demonstram empiricamente o princípio central da modelagem no C
 | Recorte por estado + muitos meses + filtro de hora | **Modelo A** | O overhead de queries do B supera o custo do `ALLOW FILTERING` do A |
 
 Essa inversão de desempenho entre cenários é o ponto mais rico discussão: não existe modelo "melhor" em Cassandra de forma absoluta — existe modelo mais adequado para um determinado padrão de consulta.
+
+## 📊 Resultados dos Experimentos
+
+### Configuração do Benchmark
+
+| Parâmetro | Valor |
+|---|---|
+| Banco de dados | Apache Cassandra |
+| Keyspace | `inmet` |
+| Tabelas | `clima_modelo_a` / `clima_modelo_b` |
+| Estados analisados | 27 UFs (cobertura nacional) |
+| Execuções por modelo | 5 (primeira descartada) |
+| Campo de medida | `temperatura_bulbo_seco` |
+| Agregação | Calculada na aplicação (sem `AVG` CQL) |
+
+---
+
+### Modelos comparados
+
+| | Modelo A | Modelo B |
+|---|---|---|
+| **Partition key** | `estado` | `(estado, ano_mes)` |
+| **Partição** | Wide — um estado contém todo o histórico | Estreita — um estado + um mês por partição |
+| **Queries por experimento** | Poucas (1 por estado ou 1 por estado+mês) | Muitas (1 por `estado × ano_mes`) |
+
+---
+
+### Experimento 1 — `read_data1.py`
+
+> **Pergunta:** Qual é a temperatura média horária por estado ao longo de todo o período disponível na base?
+> **Recorte temporal:** `2000-05` a `2020-12` (histórico completo)
+
+| Modelo | Query | Nº de queries | Tempo médio | Linhas lidas |
+|---|---|---|---|---|
+| A | `WHERE estado = ?` | 27 | **1,567 s** ✅ | 287.227 |
+| B | `WHERE estado = ? AND ano_mes = ?` | ~6.696 | 97,540 s | 287.227 |
+
+**Relação A/B: 0,016 — Modelo A ~62× mais rápido**
+
+> O Modelo A vence porque a pergunta agrega por estado em todo o histórico — padrão que casa perfeitamente com a partition key `estado`. O Modelo B precisou de ~6.696 queries para cobrir o mesmo período, gerando overhead massivo de round-trips.
+
+---
+
+### Experimento 2 — `read_data2.py`
+
+> **Pergunta:** Qual foi a temperatura média horária por estado no segundo semestre de 2005?
+> **Recorte temporal:** meses 7 a 12 de 2005
+
+| Modelo | Query | Nº de queries | Tempo médio | Linhas lidas |
+|---|---|---|---|---|
+| A | `WHERE estado = ? AND ano = 2005 AND mes = ? ALLOW FILTERING` | 162 | 3,605 s | 45.528 |
+| B | `WHERE estado = ? AND ano_mes = ?` | 162 | **2,479 s** ✅ | 45.528 |
+
+**Relação A/B: 1,454 — Modelo B ~45% mais rápido**
+
+> O Modelo B vence porque a partition key `(estado, ano_mes)` está alinhada ao recorte temporal da pergunta. O Modelo A precisou de `ALLOW FILTERING` para filtrar `ano` e `mes` dentro da partição `estado`, gerando scan interno desnecessário.
+
+---
+
+### Experimento 3 — `read_data3.py`
+
+> **Pergunta:** Qual foi a temperatura média horária por estado entre 4h e 22h, no mês de dezembro dos anos 2003 e 2004?
+> **Recorte temporal:** `2003-12` e `2004-12` | **Recorte horário:** 4h–22h
+
+| Modelo | Query | Nº de queries | Tempo médio | Linhas lidas |
+|---|---|---|---|---|
+| A | `WHERE estado = ? AND ano = ? AND mes = ? AND hora >= ? AND hora <= ? ALLOW FILTERING` | 54 | 1,268 s | 10.310 |
+| B | `WHERE estado = ? AND ano_mes = ?` + filtro de hora na aplicação | 54 | **0,824 s** ✅ | 10.310 |
+
+**Relação A/B: 1,539 — Modelo B ~54% mais rápido**
+
+> O Modelo B vence porque continua bem alinhado ao particionamento por `(estado, ano_mes)`. O Modelo A acumula múltiplos filtros desalinhados (`ano`, `mes`, `hora`) dentro da partition key `estado`, tornando o `ALLOW FILTERING` mais custoso que no Experimento 2.
+
+---
+
+### Resumo comparativo
+
+| Experimento | Pergunta (síntese) | Linhas lidas | Tempo A | Tempo B | Vencedor |
+|---|---|---|---|---|---|
+| 1 | Média por estado — histórico completo | 287.227 | 1,567 s | 97,540 s | **Modelo A** |
+| 2 | Média por estado — 2º semestre 2005 | 45.528 | 3,605 s | 2,479 s | **Modelo B** |
+| 3 | Média por estado — dez/2003 e dez/2004, 4h–22h | 10.310 | 1,268 s | 0,824 s | **Modelo B** |
+
+---
+
+### Conclusão
+
+Os experimentos evidenciam que **não existe modelo "melhor" em termos absolutos no Apache Cassandra**.
+O desempenho de leitura é determinado pelo grau de alinhamento entre a *partition key* e o padrão de acesso da query:
+
+- Perguntas que **agregam por estado em grandes janelas temporais** favorecem o **Modelo A** — uma única partição por estado cobre todo o histórico sem overhead de queries.
+- Perguntas com **recorte temporal específico** (por mês ou faixa de meses) favorecem o **Modelo B** — a partição `(estado, ano_mes)` entrega exatamente os dados necessários, sem `ALLOW FILTERING`.
+- O ponto de inflexão ocorre quando o número de partições do Modelo B cresce o suficiente para que o overhead de múltiplas queries supere o custo do scan com `ALLOW FILTERING` do Modelo A — como demonstrado no experimento com o intervalo 2005–2007 (~972 queries), onde o Modelo A foi ~7× mais rápido.
+
+> Este comportamento é consistente com o princípio de *query-driven modeling* do Apache Cassandra: **modele os dados de acordo com as queries que serão executadas**.
