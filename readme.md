@@ -1,274 +1,85 @@
-# PPCA_BDM
-
-Projeto de estudo e experimentação com Apache Cassandra para análise da influência da modelagem de dados no desempenho, usando dados meteorológicos como base de teste.
-
-## Objetivo
-
-Este projeto tem como objetivo comparar duas abordagens de modelagem no Apache Cassandra, avaliando como a definição da chave primária e da chave de partição impacta operações de escrita e leitura.
-
-A proposta é trabalhar com:
-
-- um **modelo A**, propositalmente menos eficiente;
-- um **modelo B**, otimizado para o padrão de consulta;
-- scripts de carga e benchmark para medir diferenças de desempenho.
-
-## Estrutura do projeto
-
-```text
-ppca_bdm/
-├─ .venv/
-├─ .gitignore
-├─ docker-compose.yml
-├─ requirements.txt
-├─ README.md
-├─ cql/
-├─ scripts/
-├─ data/
-│  ├─ raw/
-│  └─ processed/
-└─ results/
-   ├─ raw/
-   └─ reports/
-```
-
-## Pré-requisitos
-
-Antes de iniciar, é necessário ter instalado na máquina:
-
-- [Git](https://git-scm.com/)
-- [Python 3](https://www.python.org/)
-- [VS Code](https://code.visualstudio.com/)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-
-## Clonagem do repositório
-
-Para continuar o projeto em outra máquina:
-
-```powershell
-cd C:\VSCode
-git clone https://github.com/gustavo-plc/ppca_bdm.git
-cd ppca_bdm
-```
-
-Depois, abra a pasta no VS Code.
-
-## Criação do ambiente virtual Python
-
-No terminal do VS Code, dentro da pasta do projeto:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Se o VS Code solicitar a criação de um ambiente isolado, e a `.venv` já tiver sido criada manualmente, basta selecionar o interpretador dessa mesma venv.
-
-## Setup do Cassandra com Docker
-
-Este projeto **não exige instalação nativa do Cassandra no Windows**.  
-O banco será executado em um container Docker, o que facilita a reprodução do ambiente em qualquer máquina.
-
-### Arquivo `docker-compose.yml`
-
-O projeto utiliza um `docker-compose.yml` semelhante a este:
-
-```yaml
-services:
-  cassandra:
-    image: cassandra:latest
-    container_name: cassandra-db
-    ports:
-      - "9042:9042"
-    environment:
-      CASSANDRA_CLUSTER_NAME: "tcc-cluster"
-    volumes:
-      - cassandra_data:/var/lib/cassandra
-
-volumes:
-  cassandra_data:
-```
-
-### Iniciar o Docker Desktop
-
-Antes de subir o Cassandra, abra o **Docker Desktop** e aguarde até que ele esteja em execução.
-
-É possível validar no terminal:
-
-```powershell
-docker --version
-docker compose version
-docker ps
-```
-
-Se `docker ps` funcionar sem erro, o daemon está pronto.
-
-### Subir o container do Cassandra
-
-Na raiz do projeto:
-
-```powershell
-docker compose up -d
-```
-
-Esse comando:
-
-- baixa a imagem oficial do Cassandra, se necessário;
-- cria o container `cassandra-db`;
-- expõe a porta `9042`, usada pelo CQL;
-- cria um volume persistente chamado `cassandra_data`.
-
-### Verificar se o container está rodando
-
-```powershell
-docker ps
-```
-
-Você deve ver algo parecido com:
-
-```text
-CONTAINER ID   IMAGE              NAMES
-xxxxxxxxxxxx   cassandra:latest   cassandra-db
-```
-
-### Acompanhar a inicialização
-
-O Cassandra pode levar algum tempo até ficar pronto para conexões.
-
-Para acompanhar os logs:
-
-```powershell
-docker logs -f cassandra-db
-```
-
-Se necessário, aguarde alguns instantes até o serviço estabilizar.
-
-### Entrar no `cqlsh`
-
-Quando o Cassandra estiver pronto, execute:
-
-```powershell
-docker exec -it cassandra-db cqlsh
-```
-
-Se tudo estiver correto, o prompt do Cassandra será aberto:
-
-```text
-Connected to tcc-cluster at 127.0.0.1:9042
-[cqlsh ...]
-cqlsh>
-```
-
-## Teste inicial no Cassandra
-
-Uma vez dentro do `cqlsh`, é possível validar o ambiente com um teste simples.
-
-### Criar o keyspace
-
-```sql
-CREATE KEYSPACE IF NOT EXISTS inmet
-WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
-```
-
-### Selecionar o keyspace
-
-```sql
-USE inmet;
-```
-
-### Criar uma tabela de teste
-
-```sql
-CREATE TABLE IF NOT EXISTS exemplo (
-    id int PRIMARY KEY,
-    nome text
-);
-```
-
-### Inserir um registro
-
-```sql
-INSERT INTO exemplo (id, nome) VALUES (1, 'ok');
-```
-
-### Consultar o registro
-
-```sql
-SELECT * FROM exemplo;
-```
-
-Se o registro for retornado, o ambiente Cassandra está funcional.
-
-## Encerrar ou reiniciar o ambiente
-
-### Parar os containers
-
-```powershell
-docker compose down
-```
-
-### Subir novamente
-
-```powershell
-docker compose up -d
-```
-
-### Remover containers e volume persistente
-
-Se quiser reiniciar completamente o banco local:
-
-```powershell
-docker compose down -v
-```
-
-> Atenção: esse comando remove também o volume `cassandra_data`, apagando os dados armazenados localmente.
-
-## Próximos passos do projeto
-
-Após validar o funcionamento do Cassandra, os próximos passos são:
-
-1. criar os arquivos `.cql` do projeto;
-2. definir o keyspace e as tabelas dos modelos A e B;
-3. preparar os dados meteorológicos;
-4. escrever scripts Python de carga;
-5. executar benchmarks de escrita e leitura;
-6. registrar os resultados em `results/`.
-
-## Arquivos que devem ser versionados
-
-Devem permanecer no GitHub:
-
-- `docker-compose.yml`
-- `requirements.txt`
-- `README.md`
-- arquivos `.cql`
-- scripts Python
-- resultados consolidados e relatórios
-
-## Arquivos que não devem ser versionados
-
-Não devem ser enviados ao GitHub:
-
-- `.venv/`
-- dados brutos muito grandes
-- caches e arquivos temporários
-- volumes internos do Docker
-
-Esses itens são tratados no `.gitignore`.
-
-## Fluxo básico de uso em outra máquina
-
-Sempre que o projeto for aberto em outro computador, o fluxo recomendado é:
-
-1. clonar o repositório;
-2. criar e ativar a `.venv`;
-3. instalar dependências com `requirements.txt`;
-4. abrir o Docker Desktop;
-5. subir o Cassandra com `docker compose up -d`;
-6. acessar o banco com `docker exec -it cassandra-db cqlsh`.
-
-## Observações
-
-- O container do Cassandra é local à máquina onde o Docker está rodando.
-- O GitHub **não armazena o container em si**, apenas os arquivos que descrevem sua configuração.
-- O uso de Docker garante que o mesmo ambiente possa ser recriado facilmente em máquinas diferentes.
+Aqui está o quadro consolidado dos três experimentos, focado apenas no que importa para o trabalho.
+
+***
+
+## Configuração comum aos três scripts
+
+| Parâmetro | Valor |
+|---|---|
+| Keyspace | `inmet` |
+| Tabelas | `clima_modelo_a` / `clima_modelo_b` |
+| Estados analisados | 27 UFs (cobertura nacional completa) |
+| Execuções por modelo | 5, com descarte da primeira |
+| Campo de medida | `temperatura_bulbo_seco` |
+| Agregação | Calculada na aplicação (soma ÷ contagem), sem uso de `AVG` CQL |
+
+***
+
+## Os dois modelos de dados
+
+| | Modelo A | Modelo B |
+|---|---|---|
+| **Partition key** | `estado` | `(estado, ano_mes)` |
+| **Partição resultante** | Uma partição "wide" por estado, contendo todos os anos e meses | Uma partição "estreita" por estado + mês |
+| **Característica** | Ótimo para agregar por estado em grandes janelas temporais | Ótimo para recortes temporais específicos por estado + mês |
+
+***
+
+## Os três experimentos
+
+### `read_data1.py` — Agregação total no histórico
+
+| Item | Detalhe |
+|---|---|
+| **Pergunta analítica** | Qual é a temperatura média horária por estado ao longo de todo o período disponível na base? |
+| **Recorte temporal** | `2000-05` a `2020-12` — todo o intervalo disponível |
+| **Recorte físico** | 27 estados, sem filtro de hora ou mês |
+| **Query Modelo A** | `WHERE estado = ?` — 1 query por estado = **27 queries** |
+| **Query Modelo B** | `WHERE estado = ? AND ano_mes = ?` — 1 query por `(estado, ano_mes)` = **~6.696 queries** |
+| **Penalidade do Modelo A** | Nenhuma relevante — lê a partição inteira por estado, que é exatamente o que a pergunta exige |
+| **Penalidade do Modelo B** | Overhead massivo: milhares de round-trips para agregar o histórico completo |
+| **Vencedor esperado** | **Modelo A** |
+
+***
+
+### `read_data2.py` — Recorte temporal bem definido
+
+| Item | Detalhe |
+|---|---|
+| **Pergunta analítica** | Qual foi a temperatura média horária por estado no segundo semestre de 2005? |
+| **Recorte temporal** | Meses 7 a 12 de 2005 |
+| **Recorte físico** | 27 estados, sem filtro de hora |
+| **Query Modelo A** | `WHERE estado = ? AND ano = 2005 AND mes = ? ALLOW FILTERING` — **162 queries** |
+| **Query Modelo B** | `WHERE estado = ? AND ano_mes = ?` — **162 queries** |
+| **Penalidade do Modelo A** | `ALLOW FILTERING` em `ano` e `mes` dentro da partição `estado`, forçando scan interno |
+| **Penalidade do Modelo B** | Nenhuma relevante — 6 partições bem alinhadas por estado |
+| **Vencedor esperado** | **Modelo B** |
+
+***
+
+### `read_data3.py` — Cenário parametrizado (com filtro de hora)
+
+| Item | Detalhe |
+|---|---|
+| **Pergunta analítica** | Qual foi a temperatura média horária por estado entre `<HOUR_START>`h e `<HOUR_END>`h, nos meses `<MONTHS>` dos anos `<YEARS>`? |
+| **Recorte temporal** | Configurável via `YEARS`, `MONTHS`, `HOUR_START`, `HOUR_END` |
+| **Recorte físico** | 27 estados |
+| **Query Modelo A** | `WHERE estado = ? AND ano = ? AND mes = ? AND hora >= ? AND hora <= ? ALLOW FILTERING` |
+| **Query Modelo B** | `WHERE estado = ? AND ano_mes = ?` — filtro de hora feito na aplicação |
+| **Penalidade do Modelo A** | `ALLOW FILTERING` com múltiplos filtros desalinhados (`ano`, `mes`, `hora`), scan mais custoso |
+| **Penalidade do Modelo B** | Cresce com o número de `ano_mes` no intervalo; acima de ~12–18 partições por estado, o overhead de queries começa a superar o ganho do alinhamento |
+| **Vencedor esperado** | **Modelo B** em janelas curtas; **Modelo A** quando YEARS × MONTHS gera muitas partições |
+
+***
+
+## Conclusão sintetizada
+
+Os três scripts demonstram empiricamente o princípio central da modelagem no Cassandra: **a eficiência não depende apenas de como os dados estão armazenados, mas de quão bem o padrão de acesso da query está alinhado ao particionamento da tabela**. [cassandra.apache](https://cassandra.apache.org/doc/latest/cassandra/developing/data-modeling/intro.html)
+
+| Cenário | Quem ganha | Por quê |
+|---|---|---|
+| Agregação por estado em todo o histórico | **Modelo A** | A pergunta casa naturalmente com a partition key `estado`; o B precisa de milhares de queries |
+| Recorte por estado + poucos meses | **Modelo B** | A pergunta casa com `(estado, ano_mes)`; o A precisa de `ALLOW FILTERING` |
+| Recorte por estado + muitos meses + filtro de hora | **Modelo A** | O overhead de queries do B supera o custo do `ALLOW FILTERING` do A |
+
+Essa inversão de desempenho entre cenários é o ponto mais rico para discutir no TCC: não existe modelo "melhor" em Cassandra de forma absoluta — existe modelo mais adequado para um determinado padrão de consulta. [codesprintpro](https://www.codesprintpro.com/blog/cassandra-data-modeling/)
