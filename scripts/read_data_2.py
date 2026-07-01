@@ -9,7 +9,6 @@ TABELA_A = "clima_modelo_a"
 TABELA_B = "clima_modelo_b"
 
 NUM_RUNS = 5  # descartar a primeira
-ANO_ALVO = 2005
 
 ESTADOS = [
     "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS",
@@ -17,11 +16,8 @@ ESTADOS = [
     "SE", "SP", "TO"
 ]
 
-ANOS_MESES_2005 = [
-    "2005-01", "2005-02", "2005-03", "2005-04",
-    "2005-05", "2005-06", "2005-07", "2005-08",
-    "2005-09", "2005-10", "2005-11", "2005-12"
-]
+MESES_ALVO = [7, 8, 9, 10, 11, 12]
+ANOS_MESES_ALVO = ["2005-07", "2005-08", "2005-09", "2005-10", "2005-11", "2005-12"]
 
 
 def conectar_cassandra():
@@ -33,18 +29,18 @@ def conectar_cassandra():
 def consulta_modelo_a(session):
     """
     Pergunta analítica:
-    Qual foi a temperatura média horária por estado ao longo de 2005?
+    Qual foi a temperatura média horária por estado no segundo semestre de 2005?
 
     Modelo A:
     partition key = estado
-    Para responder por estado em 2005, precisamos filtrar por ano dentro
-    da partição, usando ALLOW FILTERING.
+    Precisamos filtrar dentro da partição por ano e por mês.
     """
     query = f"""
-        SELECT estado, ano, temperatura_bulbo_seco
+        SELECT estado, ano, mes, temperatura_bulbo_seco
         FROM {TABELA_A}
         WHERE estado = %s
-          AND ano = %s
+          AND ano = 2005
+          AND mes = %s
         ALLOW FILTERING
     """
     statement = SimpleStatement(query)
@@ -54,12 +50,13 @@ def consulta_modelo_a(session):
     total_linhas = 0
 
     for estado in ESTADOS:
-        rows = session.execute(statement, (estado, ANO_ALVO))
-        for row in rows:
-            if row.temperatura_bulbo_seco is not None:
-                soma_por_estado[estado] += row.temperatura_bulbo_seco
-                contagem_por_estado[estado] += 1
-            total_linhas += 1
+        for mes in MESES_ALVO:
+            rows = session.execute(statement, (estado, mes))
+            for row in rows:
+                if row.temperatura_bulbo_seco is not None:
+                    soma_por_estado[estado] += row.temperatura_bulbo_seco
+                    contagem_por_estado[estado] += 1
+                total_linhas += 1
 
     medias = {}
     for estado in ESTADOS:
@@ -71,13 +68,9 @@ def consulta_modelo_a(session):
 
 def consulta_modelo_b(session):
     """
-    Pergunta analítica:
-    Qual foi a temperatura média horária por estado ao longo de 2005?
-
     Modelo B:
     partition key = (estado, ano_mes)
-    A consulta fica naturalmente alinhada ao particionamento, lendo
-    12 partições por estado.
+    A leitura fica alinhada ao particionamento.
     """
     query = f"""
         SELECT estado, ano_mes, temperatura_bulbo_seco
@@ -92,7 +85,7 @@ def consulta_modelo_b(session):
     total_linhas = 0
 
     for estado in ESTADOS:
-        for ano_mes in ANOS_MESES_2005:
+        for ano_mes in ANOS_MESES_ALVO:
             rows = session.execute(statement, (estado, ano_mes))
             for row in rows:
                 if row.temperatura_bulbo_seco is not None:
@@ -160,7 +153,7 @@ def imprimir_medias(medias, titulo):
 def main():
     print("=== READ DATA 2 — LEITURA DE DADOS ===")
     print("Pergunta analítica:")
-    print("Qual foi a temperatura média horária por estado ao longo de 2005?")
+    print("Qual foi a temperatura média horária por estado no segundo semestre de 2005?")
 
     cluster, session = conectar_cassandra()
 
