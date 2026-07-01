@@ -82,4 +82,4 @@ Os três scripts demonstram empiricamente o princípio central da modelagem no C
 | Recorte por estado + poucos meses | **Modelo B** | A pergunta casa com `(estado, ano_mes)`; o A precisa de `ALLOW FILTERING` |
 | Recorte por estado + muitos meses + filtro de hora | **Modelo A** | O overhead de queries do B supera o custo do `ALLOW FILTERING` do A |
 
-Essa inversão de desempenho entre cenários é o ponto mais rico para discutir no TCC: não existe modelo "melhor" em Cassandra de forma absoluta — existe modelo mais adequado para um determinado padrão de consulta. [codesprintpro](https://www.codesprintpro.com/blog/cassandra-data-modeling/)
+Essa inversão de desempenho entre cenários é o ponto mais rico discussão: não existe modelo "melhor" em Cassandra de forma absoluta — existe modelo mais adequado para um determinado padrão de consulta.
